@@ -2,6 +2,7 @@ package source
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,8 @@ func FromString(s string) (Identifier, error) {
 		return NewHTTPIdentifier(parts[1], true)
 	case srctypes.HTTPScheme:
 		return NewHTTPIdentifier(parts[1], false)
+	case srctypes.OCIScheme:
+		return NewOCIIdentifier(parts[1])
 	default:
 		return nil, errors.Wrapf(errNotFound, "unknown schema %s", parts[0])
 	}
@@ -182,6 +185,27 @@ func FromLLB(op *pb.Op_Source, platform *pb.Platform) (Identifier, error) {
 			}
 		}
 	}
+	if id, ok := id.(*OCIIdentifier); ok {
+		if platform != nil {
+			id.Platform = &ocispecs.Platform{
+				OS:           platform.OS,
+				Architecture: platform.Architecture,
+				Variant:      platform.Variant,
+				OSVersion:    platform.OSVersion,
+				OSFeatures:   platform.OSFeatures,
+			}
+		}
+		for k, v := range op.Source.Attrs {
+			switch k {
+			case pb.AttrLocalSessionID:
+				id.SessionID = v
+				if p := strings.SplitN(v, ":", 2); len(p) == 2 {
+					id.Name = p[0] + "-" + id.Name
+					id.SessionID = p[1]
+				}
+			}
+		}
+	}
 	return id, nil
 }
 
@@ -246,6 +270,31 @@ type HTTPIdentifier struct {
 
 func (*HTTPIdentifier) ID() string {
 	return srctypes.HTTPSScheme
+}
+
+type OCIIdentifier struct {
+	Path      string
+	Manifest  digest.Digest
+	Platform  *ocispecs.Platform
+	Name      string
+	SessionID string
+}
+
+func NewOCIIdentifier(str string) (*OCIIdentifier, error) {
+	// OCI identifier arg is of the format: path@hash
+	parts := strings.SplitN(str, "@", 2)
+	if len(parts) != 2 {
+		return nil, errors.New("OCI must be in format of path-to-oci-layout@manifest-hash")
+	}
+	dig, err := digest.Parse(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("OCI must be in format of path-to-oci-layout@manifest-hash, invalid digest: %v", err)
+	}
+	return &OCIIdentifier{Path: parts[0], Manifest: dig}, nil
+}
+
+func (*OCIIdentifier) ID() string {
+	return srctypes.OCIScheme
 }
 
 func (r ResolveMode) String() string {

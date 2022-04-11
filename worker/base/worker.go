@@ -121,6 +121,7 @@ func NewWorker(ctx context.Context, opt WorkerOpt) (*Worker, error) {
 		ImageStore:    opt.ImageStore,
 		CacheAccessor: cm,
 		RegistryHosts: opt.RegistryHosts,
+		Source:        containerimage.SourceRegistry,
 		LeaseManager:  opt.LeaseManager,
 	})
 	if err != nil {
@@ -157,6 +158,21 @@ func NewWorker(ctx context.Context, opt WorkerOpt) (*Worker, error) {
 		return nil, err
 	}
 	sm.Register(ss)
+
+	os, err := containerimage.NewSource(containerimage.SourceOpt{
+		Snapshotter:   opt.Snapshotter,
+		ContentStore:  opt.ContentStore,
+		Applier:       opt.Applier,
+		ImageStore:    opt.ImageStore,
+		CacheAccessor: cm,
+		Source:        containerimage.SourceOCILayout,
+		LeaseManager:  opt.LeaseManager,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sm.Register(os)
 
 	iw, err := imageexporter.NewImageWriter(imageexporter.WriterOpt{
 		Snapshotter:  opt.Snapshotter,
