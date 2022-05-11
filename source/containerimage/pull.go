@@ -77,6 +77,9 @@ func NewSource(opt SourceOpt) (*Source, error) {
 }
 
 func (is *Source) ID() string {
+	if is.Source == SourceOCILayout {
+		return srctypes.OCIScheme
+	}
 	return srctypes.DockerImageScheme
 }
 
@@ -124,6 +127,7 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		recordType client.UsageRecordType
 		ref        reference.Spec
 		sessionID  string
+		layoutPath string
 	)
 	switch is.Source {
 	case SourceRegistry:
@@ -149,6 +153,9 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		}
 		mode = source.ResolveModeForcePull // with OCI layout, we always just "pull"
 		sessionID = ociIdentifier.SessionID
+		//FIXME support tags
+		ref = reference.Spec{Locator: "oci-layout/dummy", Object: "@" + ociIdentifier.Manifest.String()}
+		layoutPath = ociIdentifier.Path
 	default:
 		return nil, fmt.Errorf("unknown source type: %v", is.Source)
 	}
@@ -170,6 +177,7 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		SessionManager: sm,
 		SessionID:      sessionID,
 		vtx:            vtx,
+		layoutPath:     layoutPath,
 	}
 	return p, nil
 }

@@ -122,6 +122,28 @@ func (c *Client) solve(ctx context.Context, def *llb.Definition, runGateway runG
 		ex = opt.Exports[0]
 	}
 
+	// FIXME refactor with correct parsing
+	for k, v := range opt.FrontendAttrs {
+		if !strings.HasPrefix(k, "context") {
+			continue
+		}
+		if !strings.Contains(v, "oci-layout:") {
+			continue
+		}
+		p := strings.Split(v, "oci-layout:")
+		if len(p) < 2 {
+			continue
+		}
+		p = strings.Split(p[len(p)-1], "@")
+		cs, err := contentlocal.NewStore(p[0])
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create store")
+		}
+		storesMap := map[string]content.Store{"oci-layout:" + p[0]: cs}
+		s.Allow(sessioncontent.NewAttachable(storesMap))
+		syncedDirs = append(syncedDirs, filesync.SyncedDir{Name: "oci-layout:" + p[0] + "index", Dir: p[0]})
+	}
+
 	if !opt.SessionPreInitialized {
 		if len(syncedDirs) > 0 {
 			s.Allow(filesync.NewFSSyncProvider(syncedDirs))

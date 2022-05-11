@@ -929,6 +929,14 @@ func contextByName(ctx context.Context, c client.Client, name string, platform *
 			return &st, img, bi, nil
 		}
 		return &st, nil, nil, nil
+	case "oci-layout":
+		ref := strings.TrimPrefix(vv[1], "//")
+		st := llb.OCILayout(ref,
+			llb.WithCustomName("[context "+name+"] load from client"),
+			llb.SessionID(c.BuildOpts().SessionID),
+			llb.SharedKeyHint("context:"+name),
+		)
+		return &st, nil, nil, nil
 	default:
 		return nil, nil, nil, errors.Errorf("unsupported context source %s for %s", vv[0], name)
 	}

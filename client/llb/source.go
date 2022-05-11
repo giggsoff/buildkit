@@ -160,6 +160,48 @@ func Image(ref string, opts ...ImageOption) State {
 	return NewState(src.Output())
 }
 
+func OCILayout(name string, opts ...LocalOption) State {
+	var gi LocalInfo
+	for _, opt := range opts {
+		opt.SetLocalOption(&gi)
+	}
+
+	addCap(&gi.Constraints, pb.CapSourceImage)
+
+	attrs := map[string]string{}
+	if gi.SessionID != "" {
+		attrs[pb.AttrLocalSessionID] = gi.SessionID
+		addCap(&gi.Constraints, pb.CapSourceLocalSessionID)
+	}
+	if gi.IncludePatterns != "" {
+		attrs[pb.AttrIncludePatterns] = gi.IncludePatterns
+		addCap(&gi.Constraints, pb.CapSourceLocalIncludePatterns)
+	}
+	if gi.FollowPaths != "" {
+		attrs[pb.AttrFollowPaths] = gi.FollowPaths
+		addCap(&gi.Constraints, pb.CapSourceLocalFollowPaths)
+	}
+	if gi.ExcludePatterns != "" {
+		attrs[pb.AttrExcludePatterns] = gi.ExcludePatterns
+		addCap(&gi.Constraints, pb.CapSourceLocalExcludePatterns)
+	}
+	if gi.SharedKeyHint != "" {
+		attrs[pb.AttrSharedKeyHint] = gi.SharedKeyHint
+		addCap(&gi.Constraints, pb.CapSourceLocalSharedKeyHint)
+	}
+	if gi.Differ.Type != "" {
+		attrs[pb.AttrLocalDiffer] = string(gi.Differ.Type)
+		if gi.Differ.Required {
+			addCap(&gi.Constraints, pb.CapSourceLocalDiffer)
+		}
+	}
+
+	addCap(&gi.Constraints, pb.CapSourceLocal)
+
+	src := NewSource("oci-layout://"+name, attrs, gi.Constraints) // controversial
+	return NewState(src.Output())
+}
+
 type ImageOption interface {
 	SetImageOption(*ImageInfo)
 }

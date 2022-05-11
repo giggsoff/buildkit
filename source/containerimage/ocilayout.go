@@ -2,14 +2,20 @@ package containerimage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/moby/buildkit/session/filesync"
 	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/reference"
 	"github.com/containerd/containerd/remotes"
 	"github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -89,7 +95,7 @@ func (r *OCILayoutResolver) fetchWithAnySession(ctx context.Context, desc ocispe
 }
 
 func (r *OCILayoutResolver) fetchWithSession(ctx context.Context, desc ocispecs.Descriptor, caller session.Caller) (io.ReadCloser, error) {
-	store := sessioncontent.NewCallerStore(caller, "")
+	store := sessioncontent.NewCallerStore(caller, "oci-layout:"+r.path)
 	readerAt, err := store.ReaderAt(ctx, desc)
 	if err != nil {
 		return nil, err
@@ -98,9 +104,50 @@ func (r *OCILayoutResolver) fetchWithSession(ctx context.Context, desc ocispecs.
 	return ioutil.NopCloser(&readerAtWrapper{readerAt: readerAt}), nil
 }
 
-// Resolve attempts to resolve the reference into a name and descriptor. OCI Layout does not (yet) support it.
+// Resolve attempts to resolve the reference into a name and descriptor
 func (r *OCILayoutResolver) Resolve(ctx context.Context, ref string) (string, ocispecs.Descriptor, error) {
-	return ref, ocispecs.Descriptor{}, errors.New("unsupported Resolve()")
+	sessionID := r.sessionID
+
+	caller, err := r.sm.Get(ctx, sessionID, false)
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, errors.New(fmt.Sprintf("cannot get caller %s", sessionID))
+	}
+	tmpDir, err := os.MkdirTemp("", "oci-layout:index")
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, err
+	}
+	defer os.RemoveAll(tmpDir)
+	o := filesync.FSSendRequestOpt{
+		Name:            "oci-layout:" + r.path + "index",
+		DestDir:         tmpDir,
+		IncludePatterns: []string{"index.json"},
+	}
+	err = filesync.FSSync(ctx, caller, o)
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, err
+	}
+	fReader, err := os.Open(filepath.Join(tmpDir, ociImageIndexFile))
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, err
+	}
+
+	var mfst ocispecs.Index
+	decoder := json.NewDecoder(fReader)
+	err = decoder.Decode(&mfst)
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, err
+	}
+	refParsed, err := reference.Parse(ref)
+	if err != nil {
+		return ref, ocispecs.Descriptor{}, err
+	}
+	for _, el := range mfst.Manifests {
+		//FIXME add support for resolve by tag
+		if el.Digest == refParsed.Digest() {
+			return ref, el, nil
+		}
+	}
+	return ref, ocispecs.Descriptor{}, errors.New(fmt.Sprintf("not found %s", ref))
 }
 
 func (r *OCILayoutResolver) Pusher(ctx context.Context, ref string) (remotes.Pusher, error) {
